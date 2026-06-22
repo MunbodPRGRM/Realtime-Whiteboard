@@ -74,6 +74,20 @@ NextAuth credentials callback ต้องมี CSRF token + cookie jar:
 
 อย่าตั้งสมมติฐานเองว่าต้องใช้ Supabase เพราะ "ครบกว่า" — ต้องเช็คก่อนว่าฟีเจอร์ extra ของมันจำเป็นจริงไหม
 
+## Canvas freehand drawing (HTML5 Canvas)
+
+แนวทางที่ใช้ได้จริงกับ whiteboard แบบ freehand:
+
+- เก็บ stroke เป็น `{ points: {x,y}[], color, width }` (array ของจุด) — ตรงกับที่จะ persist ลง DB (`jsonb`) และ broadcast ผ่าน realtime ได้เลย ไม่ต้องแปลง
+- วาดด้วย **Pointer Events** (`onPointerDown/Move/Up`) ไม่ใช่ mouse/touch แยก — รองรับเมาส์+ทัช+ปากกาในชุดเดียว, ใช้ `setPointerCapture` กันลากออกนอก canvas แล้วหลุด
+- **ยางลบ = วาดด้วยสีพื้นหลัง (ขาว)** เป็นวิธีที่ persist ง่ายสุด (ไม่ต้องใช้ `globalCompositeOperation`/ลบ stroke ราย object) — เก็บเป็น stroke สีขาวปกติ
+- **DPR scaling:** ตั้ง `canvas.width = clientWidth * devicePixelRatio` (backing store) แล้ว `canvas.style.width = clientWidth + "px"` (CSS) + `ctx.setTransform(dpr,...)` ไม่งั้นเส้นเบลอบนจอ retina; ต้อง redraw ใหม่ทุกครั้งที่ resize เพราะ set `canvas.width` ล้าง buffer
+- วาด live ทีละ segment ตอน move (lerp จุดก่อนหน้า→ปัจจุบัน) เพื่อ feedback ทันที แล้ว redraw ทั้งหมดจาก state array เมื่อ undo/clear/เพิ่ม stroke (`ctx.lineCap/lineJoin = "round"` ให้เส้นเนียน)
+- จุดเดียว (tap ไม่ลาก) ต้อง render เป็นวงกลม (`arc`) เพราะ `moveTo` เฉย ๆ ไม่วาดอะไร
+- โครง component: server page เช็ค session+ownership/notFound แล้วส่งให้ client `BoardEditor` (ถือ state strokes/tool/color/width) ที่ประกอบ `Toolbar` + `Canvas`
+- guard `params.boardId` ด้วย regex UUID ก่อน query คอลัมน์ `uuid` — ไม่งั้น Postgres throw "invalid input syntax for type uuid" แทนที่จะได้ 404 สวย ๆ
+- Canvas/interaction เป็น visual ทดสอบผ่าน curl ได้แค่ว่า `<canvas>` + toolbar render (HTTP 200) — การวาดจริงต้องเปิดเบราว์เซอร์ดู
+
 ## Real-time collaboration
 
 ถ้าโปรเจกต์ต้องการ real-time sync ระหว่างผู้ใช้หลายคน (cursor, live edit, ฯลฯ) ตัวที่เคยใช้และพอใจคือ **Liveblocks** (managed WebSocket, มี free dev tier) — เสนอเป็น default ก่อนเสนอ self-hosted WebSocket server เพราะลดงาน infra

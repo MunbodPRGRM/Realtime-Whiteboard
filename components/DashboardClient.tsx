@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Board } from "@/db/schema";
 import { LogoutButton } from "@/components/LogoutButton";
 
@@ -23,6 +24,7 @@ export function DashboardClient({
   initialBoards: Board[];
   userName: string;
 }) {
+  const router = useRouter();
   const [boards, setBoards] = useState<Board[]>(initialBoards);
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -33,8 +35,8 @@ export function DashboardClient({
     setCreating(false);
     if (!res.ok) return;
     const { board } = await res.json();
-    // Phase 4 will navigate into the editor; for now just add to the list.
-    setBoards((prev) => [board, ...prev]);
+    // Jump straight into the new board's editor.
+    router.push(`/board/${board.id}`);
   }
 
   async function handleRename(board: Board) {
