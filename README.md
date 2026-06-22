@@ -98,4 +98,4 @@ npm run dev                 # http://localhost:3000
 | 4 Canvas freehand | ✅ |
 | 5 Liveblocks realtime | ✅ |
 | 6 Save/load strokes (DB) | ✅ |
-| 7 Deploy (Vercel + Neon) | 🚧 |
+| 7 Deploy (Vercel + Neon) | ✅ |
