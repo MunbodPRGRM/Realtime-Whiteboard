@@ -1,0 +1,94 @@
+---
+name: web-stack-preferences
+description: >
+  Personal default tech-stack preferences for Natakrit's web app projects (Next.js fullstack,
+  learning/practice projects). Captures decisions made while building Sketchsync (real-time
+  whiteboard) so future projects start from the same defaults instead of re-litigating them.
+  Use this skill whenever starting a new web app project, choosing an ORM/database layer,
+  setting up authentication, picking a database host, or planning development phases for a
+  Next.js + PostgreSQL app — even if the user doesn't explicitly ask "what stack should I use."
+  Trigger on phrases like "เริ่มโปรเจกต์ใหม่", "ควรใช้ ORM ตัวไหน", "ตั้ง auth ยังไง",
+  "Supabase หรือ Neon", or any request to scaffold/plan a Next.js + Postgres project.
+---
+
+# Web Stack Preferences
+
+แนวทาง default สำหรับโปรเจกต์ฝึกฝีมือ/เรียนรู้แบบ Next.js fullstack ของ Natakrit — มาจากบทเรียนตอนวางแผนโปรเจกต์ Sketchsync (real-time whiteboard)
+
+## หลักคิดรวม
+
+เลือก tool ที่ **เบาและตรงไปตรงมาที่สุดที่ยังพอใช้งานได้** มากกว่า tool ที่ฟีเจอร์ครบแต่มี abstraction/setup เยอะ โดยเฉพาะกับโปรเจกต์ฝึกฝีมือที่เป้าหมายคือเข้าใจของจริงข้างใต้ ไม่ใช่ ship เร็วที่สุด ถ้าจะเพิ่ม complexity (เช่น OAuth, paid service, backend platform ที่ bundle ฟีเจอร์เยอะ) ให้ถามผู้ใช้ก่อนเสมอ อย่าเพิ่มเองโดยไม่ถาม
+
+## ORM / Database layer
+
+**Default: `pg` (node-postgres) + Drizzle ORM — ไม่ใช่ Prisma**
+
+เหตุผล:
+- ไม่มี codegen step (Prisma ต้องรัน `prisma generate` ทุกครั้งที่แก้ schema, ขัดจังหวะ dev loop)
+- Schema เขียนเป็น TypeScript ตรงๆ ไม่มี DSL แยก (`.prisma` file)
+- Syntax ใกล้ SQL มาก — เหมาะกับโปรเจกต์เรียนรู้ที่อยากเห็น SQL จริงข้างหลัง
+- Bundle เล็กกว่ามาก (~5KB vs Prisma client ~40KB + binary ~50MB)
+- รองรับ edge runtime / Vercel ได้ดีกว่าโดยไม่ต้องพึ่ง paid proxy (Prisma Accelerate)
+
+ถ้าผู้ใช้บอกว่าอยากได้อะไรที่ "ง่ายกว่า Drizzle อีก" ให้เสนอ raw `pg` ล้วนๆ (เขียน SQL เองทุกคำสั่ง ไม่มี ORM เลย) เป็นตัวเลือกถัดไป — แต่เตือนว่าจะไม่มี type safety และต้องเขียน migration SQL เอง
+
+อย่าเสนอ Prisma เป็น default แม้จะเป็นตัวที่นิยมสุดในตลาด เพราะผู้ใช้คนนี้ feedback ตรงว่ารู้สึกว่า Prisma ซับซ้อนเกินจำเป็นสำหรับ scope งานแบบนี้
+
+## Authentication
+
+**Default: NextAuth.js, Credentials provider (username/password) เท่านั้น — ไม่เพิ่ม OAuth (Google/GitHub ฯลฯ) เว้นแต่ผู้ใช้ขอ**
+
+เหตุผล: OAuth เพิ่มงาน setup ที่ไม่เกี่ยวกับ core ของแอป (ไปสร้าง credentials ใน Google Cloud Console, จัดการ callback URL, ฯลฯ) สำหรับโปรเจกต์ฝึกฝีมือยังไม่จำเป็น
+
+ถ้าผู้ใช้พูดถึง auth โดยไม่ระบุ ให้ถือว่าหมายถึง username/password ก่อน แล้วถามว่าต้องการ OAuth เพิ่มไหม
+
+## Database hosting (production / deploy)
+
+**เลือกระหว่าง Neon vs Supabase ด้วยคำถามนี้: โปรเจกต์ใช้ฟีเจอร์ auth/storage/realtime ของ Supabase ไหม?**
+
+- ถ้า **ไม่ใช้** (มี NextAuth + Liveblocks หรือ realtime library อื่นจัดการเองอยู่แล้ว) → เลือก **Neon** เพราะผูกกับ Vercel แน่นกว่า (Neon เป็น engine เดียวกับ Vercel Postgres), serverless driver ใช้กับ Prisma/Drizzle ได้ทันทีไม่ต้องตั้งค่าเยอะ, มี database branching สำหรับ preview deploy
+- ถ้า **ใช้** ฟีเจอร์ bundle ของ Supabase (เช่นอยากได้ storage หรือ realtime subscription ในตัวโดยไม่อยากตั้ง service แยก) → เลือก **Supabase** เพราะ dashboard ครบกว่า ลด setup หลายจุดพร้อมกัน
+
+อย่าตั้งสมมติฐานเองว่าต้องใช้ Supabase เพราะ "ครบกว่า" — ต้องเช็คก่อนว่าฟีเจอร์ extra ของมันจำเป็นจริงไหม
+
+## Real-time collaboration
+
+ถ้าโปรเจกต์ต้องการ real-time sync ระหว่างผู้ใช้หลายคน (cursor, live edit, ฯลฯ) ตัวที่เคยใช้และพอใจคือ **Liveblocks** (managed WebSocket, มี free dev tier) — เสนอเป็น default ก่อนเสนอ self-hosted WebSocket server เพราะลดงาน infra
+
+## วิธีวางแผน Development Phases
+
+แตกงานเป็น phase ตามลำดับนี้ (ปรับตามฟีเจอร์จริงของแต่ละโปรเจกต์):
+
+1. Setup framework + styling + ต่อ database layer (ยังไม่ต้อง deploy)
+2. Auth (login/register)
+3. Core CRUD ของ entity หลัก
+4. Core feature แบบ local-only (ยังไม่ real-time)
+5. เพิ่ม real-time/collaboration layer
+6. Persist ข้อมูลจริงลง DB
+7. Deploy + ย้าย DB ไป hosting จริง
+
+แจ้งผู้ใช้ตรงๆ ว่าจุดไหนใน timeline ที่ต้องไปสมัคร external service (เช่น Liveblocks, Neon) ก่อนเพื่อไม่ให้ไปติดกลาง phase
+
+## Scaffolding (create-next-app) — ข้อควรระวังที่เจอจริง
+
+- **ชื่อโฟลเดอร์มีตัวพิมพ์ใหญ่ → `create-next-app .` ใช้ไม่ได้** (npm ห้ามชื่อ package มีตัวพิมพ์ใหญ่ เช่นโฟลเดอร์ `Realtime-Whiteboard`) วิธีแก้ที่ใช้ได้: scaffold ลง subfolder ชื่อ lowercase (เช่น `sketchsync`) แล้ว `mv` ทุกอย่างขึ้น root (ย้ายในไดรฟ์เดียวกันเป็น rename เร็วมาก) — ใช้ `shopt -s dotglob` เพื่อให้ย้าย dotfiles (`.git`, `.gitignore` ฯลฯ) ติดไปด้วย
+- **`create-next-app .` ไม่ยอมรันถ้าโฟลเดอร์มีไฟล์แปลกปลอม** (เช่น `CONTEXT.md`, `SKILL.md`, `.claude/`) — ย้ายออกชั่วคราวก่อน scaffold แล้วย้ายกลับ
+- Pin เวอร์ชันด้วย `create-next-app@14` เมื่ออยากได้ Next 14 + Tailwind v3 (เสถียร, doc เยอะ) แทน latest ที่ให้ Next 15
+- Flag ที่ใช้: `--typescript --tailwind --app --no-src-dir --eslint --import-alias "@/*" --use-npm` (ไม่มี `src/` เพื่อให้ `app/` อยู่ root ตาม structure ที่วางไว้)
+
+## Drizzle migration ใน non-interactive shell
+
+- **`drizzle-kit push` ต้องการ TTY** (กดยืนยัน interactive) → พังใน shell ของ agent ด้วย error "Interactive prompts require a TTY terminal". ใช้ flow **`generate` + `migrate`** แทน: `drizzle-kit generate` สร้างไฟล์ SQL ลง `db/migrations/`, แล้ว `drizzle-kit migrate` apply เข้า DB แบบ non-interactive (เป็น production workflow ที่ถูกต้องอยู่แล้ว — `push` ไว้ prototype เร็ว ๆ ตอน dev เอง)
+- ใส่ scripts ทั้ง 3: `db:generate`, `db:migrate`, `db:push` (+ `db:studio`) ใน package.json
+- `gen_random_uuid()` เป็น built-in ตั้งแต่ Postgres 13 — ไม่ต้องเปิด extension `pgcrypto`
+- ตั้ง singleton `Pool` ผ่าน `globalThis` ใน `lib/db.ts` กัน connection leak ตอน Next.js hot reload (สร้าง pool ใหม่ทุกครั้งที่ fast refresh)
+
+## ตัวอย่างการใช้งาน
+
+**ตัวอย่าง 1:**
+คำขอ: "อยากทำเว็บ task manager แบบ real-time ด้วย Next.js"
+คำตอบที่ควรให้: เสนอ Drizzle + `pg` (ไม่ใช่ Prisma), NextAuth username/password เป็น default, ถามว่าต้องการ real-time แบบไหนแล้วเสนอ Liveblocks, วางแผนเป็น phase ตามลำดับด้านบน
+
+**ตัวอย่าง 2:**
+คำขอ: "ควรเก็บ DB ที่ไหนตอน deploy ดี ใช้ Vercel"
+คำตอบที่ควรให้: ถามก่อนว่าใช้ฟีเจอร์ auth/storage ของ Supabase ไหม ถ้าไม่ใช้ แนะนำ Neon เพราะผูกกับ Vercel แน่นกว่า
