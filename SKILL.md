@@ -42,6 +42,29 @@ description: >
 
 ถ้าผู้ใช้พูดถึง auth โดยไม่ระบุ ให้ถือว่าหมายถึง username/password ก่อน แล้วถามว่าต้องการ OAuth เพิ่มไหม
 
+### รายละเอียดที่ใช้ได้จริง (NextAuth v4 + Credentials)
+
+- ใช้ **NextAuth v4** (`next-auth@4`) กับ Next 14 App Router — เสถียร, doc เยอะ, เข้ากับ route `app/api/auth/[...nextauth]/route.ts` ที่ export `{ handler as GET, handler as POST }` ไม่เลือก v5/Auth.js ที่ยัง beta เว้นแต่ผู้ใช้ขอ
+- Hash ด้วย **`bcryptjs`** (pure JS) ไม่ใช่ `bcrypt` (native, มักพังตอน compile บน Windows) — `bcrypt.hash(pw, 10)` / `bcrypt.compare`
+- `session.strategy: "jwt"` + callbacks `jwt`/`session` เพื่อยัด `id`/`username` custom เข้า token/session แล้ว augment type ใน `types/next-auth.d.ts` (`declare module "next-auth"` + `"next-auth/jwt"`)
+- แยก register เป็น API route ของตัวเอง (`/api/register`) ไม่ผูกกับ NextAuth — ตรวจซ้ำ username, validate, hash, insert, `.returning()` เฉพาะ field ปลอดภัย (ไม่คืน password)
+- `SessionProvider` ต้องอยู่ใน client component (`app/providers.tsx` มี `"use client"`) แล้วครอบใน `layout.tsx`; ฝั่ง server อ่าน session ด้วย `getServerSession(authOptions)`
+
+### ทดสอบ login flow แบบ non-browser (curl)
+
+NextAuth credentials callback ต้องมี CSRF token + cookie jar:
+1. `GET /api/auth/csrf` (เก็บ cookie ด้วย `-c jar`) → ดึง `csrfToken`
+2. `POST /api/auth/callback/credentials` แบบ `x-www-form-urlencoded` ส่ง `csrfToken`,`username`,`password` (`-b jar -c jar`) → สำเร็จ = **302 ไป `/`**, ผิด = **302 ไป `/api/auth/error?error=CredentialsSignin`**
+3. `GET /api/auth/session` (`-b jar`) → สำเร็จคืน user object, ไม่ผ่านคืน `{}`
+
+### Route protection (middleware)
+
+- ป้องกัน route ด้วย `next-auth/middleware` + `matcher` ใน `export const config`
+- **`export { default } from "next-auth/middleware"` (แบบสั้น) จะ redirect ไป `/api/auth/signin` เสมอ** ไม่สน `pages.signIn` ใน authOptions → ถ้าอยากให้ไปหน้า custom (`/login`) ต้องใช้ `withAuth({ pages: { signIn: "/login" } })` แทน
+- middleware redirect ใช้ status **307** (ไม่ใช่ 302) พร้อม `?callbackUrl=` ติดมาด้วย
+- ใน API route / server component บังคับ ownership ด้วย `where(and(eq(table.id, id), eq(table.ownerId, session.user.id)))` แล้วเช็คผล `.returning()` ว่าว่าง → คืน 404 (กันคนแก้/ลบ resource ของคนอื่น โดยไม่ leak ว่ามีอยู่จริงไหม)
+- อ่าน session ใน API route ด้วย `getServerSession(authOptions)` (ฝั่ง server)
+
 ## Database hosting (production / deploy)
 
 **เลือกระหว่าง Neon vs Supabase ด้วยคำถามนี้: โปรเจกต์ใช้ฟีเจอร์ auth/storage/realtime ของ Supabase ไหม?**
