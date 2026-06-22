@@ -1,10 +1,11 @@
 import { getServerSession } from "next-auth";
 import { redirect, notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { boards } from "@/db/schema";
+import { boards, strokes } from "@/db/schema";
 import { BoardEditor } from "@/components/BoardEditor";
+import type { LocalStroke } from "@/lib/types";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -25,5 +26,24 @@ export default async function BoardPage({
   });
   if (!board) notFound();
 
-  return <BoardEditor boardId={board.id} boardName={board.name} />;
+  const rows = await db
+    .select({
+      id: strokes.id,
+      points: strokes.points,
+      color: strokes.color,
+      width: strokes.width,
+    })
+    .from(strokes)
+    .where(eq(strokes.boardId, board.id))
+    .orderBy(asc(strokes.createdAt));
+
+  const initialStrokes: LocalStroke[] = rows;
+
+  return (
+    <BoardEditor
+      boardId={board.id}
+      boardName={board.name}
+      initialStrokes={initialStrokes}
+    />
+  );
 }

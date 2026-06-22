@@ -23,6 +23,7 @@ type Props = {
   onUndo: () => void;
   onClear: () => void;
   canUndo: boolean;
+  saving: boolean;
 };
 
 export function Toolbar({
@@ -36,6 +37,7 @@ export function Toolbar({
   onUndo,
   onClear,
   canUndo,
+  saving,
 }: Props) {
   return (
     <div className="flex flex-wrap items-center gap-3 border-b border-gray-200 bg-white px-4 py-2">
@@ -139,6 +141,10 @@ export function Toolbar({
       >
         ล้างทั้งหมด
       </button>
+
+      <span className="ml-auto text-xs text-gray-400">
+        {saving ? "กำลังบันทึก..." : "บันทึกแล้ว"}
+      </span>
     </div>
   );
 }

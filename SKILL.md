@@ -88,6 +88,16 @@ NextAuth credentials callback ต้องมี CSRF token + cookie jar:
 - guard `params.boardId` ด้วย regex UUID ก่อน query คอลัมน์ `uuid` — ไม่งั้น Postgres throw "invalid input syntax for type uuid" แทนที่จะได้ 404 สวย ๆ
 - Canvas/interaction เป็น visual ทดสอบผ่าน curl ได้แค่ว่า `<canvas>` + toolbar render (HTTP 200) — การวาดจริงต้องเปิดเบราว์เซอร์ดู
 
+## Persist strokes ลง DB
+
+- เซฟ **ทีละ stroke ตอนวาดจบ** (POST 1 row ต่อ 1 เส้น) ไม่ใช่ dump ทั้ง canvas — เข้ากับ realtime (1 stroke = 1 event) และ undo/redo ทำเป็นราย row ได้
+- เก็บ `points` เป็น `jsonb` (`$type<{x,y}[]>()` ใน Drizzle) — roundtrip array จุดกลับมาตรงเป๊ะไม่ต้อง serialize เอง
+- **id จาก server ต้อง backfill กลับเข้า client state**: วาดจบ → optimistic append (ยังไม่มี id) → POST → ได้ id → `setStrokes(map(s => s===stroke ? {...s,id} : s))` (ใช้ reference equality ของ object เดิม) เพื่อให้ undo รู้ว่าจะ DELETE row ไหน
+- undo = `DELETE /strokes/:id`, clear = `DELETE /strokes` (ทั้งบอร์ด) — touch `board.updatedAt` ทุกครั้งที่ strokes เปลี่ยน เพื่อให้ dashboard เรียงตามกิจกรรมล่าสุด
+- โหลด initial strokes ฝั่ง server component (query ตรงจาก db, `orderBy(asc(createdAt))`) แล้วส่งเป็น prop ให้ client editor — ไม่ต้อง fetch ซ้ำฝั่ง client ตอน mount
+- **ข้อจำกัดที่รู้ตัว (ยังไม่แก้):** เก็บพิกัดเป็น canvas pixel ดิบ → เปิดคนละขนาดจอจะเหลื่อม; undo ระหว่างที่ stroke ยังเซฟไม่เสร็จ (ยังไม่มี id) จะลบเฉพาะ local แต่ POST อาจ persist ทันเป็น orphan — รับได้สำหรับ MVP, จะแก้ตอนทำ normalized coords / realtime
+- Phase 6 เป็น API ล้วน → ทดสอบ persistence ครบผ่าน curl ได้ (ต่างจาก Phase 4 ที่เป็น visual)
+
 ## Real-time collaboration
 
 ถ้าโปรเจกต์ต้องการ real-time sync ระหว่างผู้ใช้หลายคน (cursor, live edit, ฯลฯ) ตัวที่เคยใช้และพอใจคือ **Liveblocks** (managed WebSocket, มี free dev tier) — เสนอเป็น default ก่อนเสนอ self-hosted WebSocket server เพราะลดงาน infra
