@@ -65,6 +65,13 @@ NextAuth credentials callback ต้องมี CSRF token + cookie jar:
 - ใน API route / server component บังคับ ownership ด้วย `where(and(eq(table.id, id), eq(table.ownerId, session.user.id)))` แล้วเช็คผล `.returning()` ว่าว่าง → คืน 404 (กันคนแก้/ลบ resource ของคนอื่น โดยไม่ leak ว่ามีอยู่จริงไหม)
 - อ่าน session ใน API route ด้วย `getServerSession(authOptions)` (ฝั่ง server)
 
+### ⚠️ NextAuth v4 middleware (`withAuth`) บน Vercel Edge เด้ง login ทั้งที่ login แล้ว — เจอจริงตอน deploy
+
+อาการ: register/login สำเร็จ, หน้าแรกเห็นว่า login แล้ว, `/api/auth/session` คืน user object ครบ — **แต่กดเข้า route ที่ middleware ป้องกัน (`/dashboard`) กลับเด้ง `/login`**
+- วินิจฉัย: ถ้า `/api/auth/session` (Node, `getServerSession`) คืน user แต่ middleware เด้ง → ปัญหาอยู่ที่ **`getToken` บน Edge runtime ล้วน ๆ** (decode token ฝั่ง edge ไม่ตรงกับ Node) ไม่ใช่ cookie/secret/NEXTAUTH_URL (พวกนั้นถูกหมดแล้ว)
+- **ทางแก้ที่เชื่อถือได้บน App Router: ไม่ต้องพึ่ง edge middleware เลย** — ใส่ guard ในตัว server component page (`const s = await getServerSession(authOptions); if(!s?.user) redirect("/login")`) ซึ่ง `getServerSession` ทำงานบน prod แน่นอน แล้ว**ลบ `middleware.ts` ทิ้ง** (ความปลอดภัยอยู่ที่ page guard ครบ); หลังลบ build จะไม่มีบรรทัด `ƒ Middleware` อีก
+- บทเรียน: บน App Router อย่า duplicate auth ไว้ทั้ง middleware + page — page-level `getServerSession` reliable กว่า edge `getToken`; ถ้าจะใช้ middleware ต้องเทสต์บน prod จริง ไม่ใช่แค่ local (local เป็น http ไม่เจอปัญหา secure-cookie/edge)
+
 ## Database hosting (production / deploy)
 
 **เลือกระหว่าง Neon vs Supabase ด้วยคำถามนี้: โปรเจกต์ใช้ฟีเจอร์ auth/storage/realtime ของ Supabase ไหม?**
