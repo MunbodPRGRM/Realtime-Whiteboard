@@ -74,6 +74,15 @@ NextAuth credentials callback ต้องมี CSRF token + cookie jar:
 
 อย่าตั้งสมมติฐานเองว่าต้องใช้ Supabase เพราะ "ครบกว่า" — ต้องเช็คก่อนว่าฟีเจอร์ extra ของมันจำเป็นจริงไหม
 
+### Checklist ตอน deploy Next.js + Drizzle + NextAuth ขึ้น Vercel + Neon
+
+- รัน `next build` ในเครื่องก่อน push เสมอ — จับ type/lint error + ดู route map (static `○` vs dynamic `ƒ`) ที่นี่ก่อนเสีย build minute บน Vercel
+- **Neon ใช้ pooled connection string** (endpoint มี `-pooler`, `?sslmode=require`) สำหรับ serverless — กัน connection exhaustion ; `pg` honor `sslmode=require` จาก URL อยู่แล้ว ไม่ต้องตั้ง `ssl` ในโค้ด (Neon cert valid)
+- apply schema ขึ้น Neon ด้วยการชี้ `DATABASE_URL` ไป Neon ชั่วคราวแล้วรัน `db:migrate` (`DATABASE_URL="<neon>" npm run db:migrate`)
+- env vars บน Vercel ที่ต้องตั้ง: `DATABASE_URL`, `NEXTAUTH_SECRET`, **`NEXTAUTH_URL` = domain จริง** (ไม่งั้น callback เพี้ยน), `LIVEBLOCKS_SECRET_KEY`
+- API routes ที่ใช้ `pg` ต้องอยู่ Node runtime (default) — อย่าเผลอใส่ `export const runtime = "edge"` ; middleware ของ next-auth รันบน edge อ่าน `NEXTAUTH_SECRET` ได้ปกติ
+- เขียน README (ภาษาไทย, commands อังกฤษ) ครอบ: setup local, ตาราง env vars, scripts, ขั้นตอน deploy — แทน boilerplate ของ create-next-app
+
 ## Canvas freehand drawing (HTML5 Canvas)
 
 แนวทางที่ใช้ได้จริงกับ whiteboard แบบ freehand:
@@ -101,6 +110,26 @@ NextAuth credentials callback ต้องมี CSRF token + cookie jar:
 ## Real-time collaboration
 
 ถ้าโปรเจกต์ต้องการ real-time sync ระหว่างผู้ใช้หลายคน (cursor, live edit, ฯลฯ) ตัวที่เคยใช้และพอใจคือ **Liveblocks** (managed WebSocket, มี free dev tier) — เสนอเป็น default ก่อนเสนอ self-hosted WebSocket server เพราะลดงาน infra
+
+### รายละเอียดที่ใช้ได้จริง (Liveblocks v3 + Next 14 App Router)
+
+- packages: `@liveblocks/client`, `@liveblocks/react` (hooks/providers), `@liveblocks/node` (auth endpoint)
+- **type ทั้งหมดผ่าน global augmentation**: `declare global { interface Liveblocks { Presence; UserMeta; RoomEvent } }` ใน `liveblocks.config.ts` (ต้อง `export {}` ให้เป็น module) → hooks strongly-typed อัตโนมัติ ไม่ต้อง `createRoomContext`
+- **auth endpoint** (`app/api/liveblocks-auth/route.ts`): `new Liveblocks({secret})` → `liveblocks.prepareSession(userId, {userInfo:{name}})` → `session.allow(room, session.FULL_ACCESS)` → `session.authorize()` คืน `{status, body}` ; ดึง userId/name จาก `getServerSession(authOptions)` ผูกกับ NextAuth
+- ฝั่ง client ใช้ `authEndpoint="/api/liveblocks-auth"` ใน `<LiveblocksProvider>` → **ไม่ต้องมี public key** บน client (secret อยู่ฝั่ง server เท่านั้น)
+- โครง: `<LiveblocksProvider><RoomProvider id={`board-${id}`} initialPresence={{cursor:null}}>` ; cursor ใช้ `useUpdateMyPresence()` + `useOthers()` ; broadcast stroke ใช้ `useBroadcastEvent()` + `useEventListener(({event})=>...)`
+- **sync model ที่จับคู่กับ DB persistence ได้ดี:** คนวาดเป็นคนเซฟลง DB แล้ว broadcast stroke (พร้อม id) ให้คนอื่น; คนอื่นแค่ render local ไม่ persist ซ้ำ — undo/clear ก็ broadcast event ลบ local ฝั่งคนรับ (ไม่ DELETE ซ้ำ) ; reload ดึงจาก DB
+- **graceful degradation สำคัญมาก:** gate ด้วย `realtimeEnabled = !!process.env.LIVEBLOCKS_SECRET_KEY` ฝั่ง server แล้วส่งเป็น prop; ถ้าไม่มี key ให้ render editor ธรรมดา (ไม่เรียก Liveblocks hooks เลย เพราะ hooks เรียกนอก `RoomProvider` จะ throw) — แอปจึงใช้ได้ทันทีก่อนสมัคร service, auth endpoint คืน 501 เฉย ๆ
+- **conditional hooks ทำไม่ได้** → แยกเป็น 2 component: wrapper (`BoardRoom`) ตัดสินใจ realtime on/off, กับ inner (`BoardCanvas` แบบ `forwardRef` + `useImperativeHandle` เปิด `applyRemoteStroke/Undo/Clear`) ให้ realtime bridge สั่งงานแบบ imperative ; inner ทำงานได้ทั้งมี/ไม่มี realtime adapter
+- ทดสอบ realtime จริงต้องมี key + เปิด 2 หน้าต่าง — ไม่มี key เทสต์ได้แค่ว่า degrade mode ไม่พัง (board 200, auth 501) ; **มี key แล้วเทสต์ผ่าน curl ได้ว่า `/api/liveblocks-auth` คืน 200 + token (ยาว ~760 chars)** ยืนยัน key+session wiring ถูก โดยไม่ต้องเปิดเบราว์เซอร์
+- throttle การส่ง presence ที่ `<LiveblocksProvider throttle={80}>` (16–1000ms) ลด bandwidth/quota ; คู่กับ CSS `transition-transform duration-100` ที่ cursor ฝั่งคนรับเพื่อให้ลื่นแม้ส่งห่าง ; แสดงสถานะต่อด้วย `useStatus()` (initial/connecting/connected/...), online users ด้วย `useOthers()` + `useSelf()`
+
+## Normalized coordinates (สำคัญสำหรับ canvas ที่ sync/persist)
+
+- เก็บพิกัด stroke + cursor เป็น **normalized 0..1** (หารด้วยขนาด canvas) ไม่ใช่ pixel ดิบ — ไม่งั้นเปิดคนละขนาดจอ/หน้าต่าง เส้นกับ cursor จะเหลื่อม
+- input: `(clientX-rect.left)/rect.width` (clamp 0..1) ; render: `point * canvas.clientWidth` (ภายใต้ ctx ที่ setTransform(dpr) แล้ว coordinate space เป็น CSS px) ; **`lineWidth` เก็บเป็น px คงที่** (อยากให้เส้นหนาเท่ากันเชิงสายตา ไม่ scale ตามจอ)
+- overlay cursor วาง normalized × ขนาด container — ให้ overlay วัดขนาดตัวเองด้วย `ResizeObserver` (self-contained) แทนรับ size เป็น prop
+- **ระวัง data migration:** ถ้าเคยเก็บ pixel แล้วสลับเป็น normalized, stroke เก่าจะ misalign (ค่า >1 → คูณขนาดแล้วหลุดจอ) ต้องเคลียร์/แปลงก่อน — เช็คจำนวน row เดิมก่อนเปลี่ยน schema-meaning
 
 ## วิธีวางแผน Development Phases
 

@@ -4,7 +4,7 @@ import { asc, eq } from "drizzle-orm";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { boards, strokes } from "@/db/schema";
-import { BoardEditor } from "@/components/BoardEditor";
+import { BoardRoom } from "@/components/BoardRoom";
 import type { LocalStroke } from "@/lib/types";
 
 const UUID_RE =
@@ -38,12 +38,14 @@ export default async function BoardPage({
     .orderBy(asc(strokes.createdAt));
 
   const initialStrokes: LocalStroke[] = rows;
+  const realtimeEnabled = !!process.env.LIVEBLOCKS_SECRET_KEY;
 
   return (
-    <BoardEditor
+    <BoardRoom
       boardId={board.id}
       boardName={board.name}
       initialStrokes={initialStrokes}
+      realtimeEnabled={realtimeEnabled}
     />
   );
 }

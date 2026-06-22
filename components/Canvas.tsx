@@ -5,20 +5,41 @@ import type { LocalStroke, Point, Tool } from "@/lib/types";
 
 const ERASER_COLOR = "#ffffff";
 
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
 type Props = {
   strokes: LocalStroke[];
   color: string;
   width: number;
   tool: Tool;
   onStrokeEnd: (stroke: LocalStroke) => void;
+  // Reports the pointer position over the canvas (null when it leaves),
+  // used to broadcast the live cursor in real-time mode. Normalized 0..1.
+  onCursor?: (point: Point | null) => void;
 };
 
-export function Canvas({ strokes, color, width, tool, onStrokeEnd }: Props) {
+export function Canvas({
+  strokes,
+  color,
+  width,
+  tool,
+  onStrokeEnd,
+  onCursor,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const currentRef = useRef<Point[]>([]);
 
   const getCtx = () => canvasRef.current?.getContext("2d") ?? null;
+
+  // Stroke/cursor coordinates are stored normalized (0..1) so a drawing
+  // looks the same on any canvas size. Convert to CSS pixels for rendering.
+  const toPx = useCallback((p: Point) => {
+    const canvas = canvasRef.current;
+    const w = canvas?.clientWidth ?? 0;
+    const h = canvas?.clientHeight ?? 0;
+    return { x: p.x * w, y: p.y * h };
+  }, []);
 
   const drawStroke = useCallback(
     (ctx: CanvasRenderingContext2D, stroke: LocalStroke) => {
@@ -26,7 +47,7 @@ export function Canvas({ strokes, color, width, tool, onStrokeEnd }: Props) {
 
       // A single point (tap without dragging) renders as a filled dot.
       if (stroke.points.length === 1) {
-        const p = stroke.points[0];
+        const p = toPx(stroke.points[0]);
         ctx.fillStyle = stroke.color;
         ctx.beginPath();
         ctx.arc(p.x, p.y, stroke.width / 2, 0, Math.PI * 2);
@@ -39,13 +60,15 @@ export function Canvas({ strokes, color, width, tool, onStrokeEnd }: Props) {
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       ctx.beginPath();
-      ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+      const first = toPx(stroke.points[0]);
+      ctx.moveTo(first.x, first.y);
       for (let i = 1; i < stroke.points.length; i++) {
-        ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+        const p = toPx(stroke.points[i]);
+        ctx.lineTo(p.x, p.y);
       }
       ctx.stroke();
     },
-    []
+    [toPx]
   );
 
   const redraw = useCallback(() => {
@@ -90,9 +113,13 @@ export function Canvas({ strokes, color, width, tool, onStrokeEnd }: Props) {
     redraw();
   }, [redraw]);
 
+  // Normalized point (0..1) from a pointer event.
   const pointFromEvent = (e: React.PointerEvent): Point => {
     const rect = canvasRef.current!.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    return {
+      x: clamp01((e.clientX - rect.left) / rect.width),
+      y: clamp01((e.clientY - rect.top) / rect.height),
+    };
   };
 
   const activeColor = tool === "eraser" ? ERASER_COLOR : color;
@@ -106,29 +133,34 @@ export function Canvas({ strokes, color, width, tool, onStrokeEnd }: Props) {
     // Draw the starting dot immediately for instant feedback.
     const ctx = getCtx();
     if (ctx) {
+      const px = toPx(p);
       ctx.fillStyle = activeColor;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, width / 2, 0, Math.PI * 2);
+      ctx.arc(px.x, px.y, width / 2, 0, Math.PI * 2);
       ctx.fill();
     }
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
+    const cursor = pointFromEvent(e);
+    onCursor?.(cursor);
+
     if (!drawingRef.current) return;
-    const p = pointFromEvent(e);
     const points = currentRef.current;
     const prev = points[points.length - 1];
-    points.push(p);
+    points.push(cursor);
 
     const ctx = getCtx();
     if (!ctx) return;
+    const from = toPx(prev);
+    const to = toPx(cursor);
     ctx.strokeStyle = activeColor;
     ctx.lineWidth = width;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.beginPath();
-    ctx.moveTo(prev.x, prev.y);
-    ctx.lineTo(p.x, p.y);
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
     ctx.stroke();
   };
 
@@ -142,6 +174,11 @@ export function Canvas({ strokes, color, width, tool, onStrokeEnd }: Props) {
     currentRef.current = [];
   };
 
+  const handlePointerLeave = () => {
+    handlePointerUp();
+    onCursor?.(null);
+  };
+
   return (
     <canvas
       ref={canvasRef}
@@ -149,7 +186,7 @@ export function Canvas({ strokes, color, width, tool, onStrokeEnd }: Props) {
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
+      onPointerLeave={handlePointerLeave}
     />
   );
 }

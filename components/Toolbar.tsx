@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import type { Tool } from "@/lib/types";
 
@@ -24,6 +25,8 @@ type Props = {
   onClear: () => void;
   canUndo: boolean;
   saving: boolean;
+  // Filled with the online-users avatars in real-time mode (null otherwise).
+  presenceSlot?: React.ReactNode;
 };
 
 export function Toolbar({
@@ -38,7 +41,20 @@ export function Toolbar({
   onClear,
   canUndo,
   saving,
+  presenceSlot,
 }: Props) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleShare() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard may be unavailable (e.g. non-HTTPS) — ignore silently.
+    }
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-3 border-b border-gray-200 bg-white px-4 py-2">
       <Link
@@ -51,6 +67,13 @@ export function Toolbar({
       <span className="max-w-[12rem] truncate font-medium text-gray-900">
         {boardName}
       </span>
+
+      <button
+        onClick={handleShare}
+        className="rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-700 transition hover:bg-gray-100"
+      >
+        {copied ? "คัดลอกลิงก์แล้ว ✓" : "แชร์"}
+      </button>
 
       <div className="mx-2 h-6 w-px bg-gray-200" />
 
@@ -142,9 +165,12 @@ export function Toolbar({
         ล้างทั้งหมด
       </button>
 
-      <span className="ml-auto text-xs text-gray-400">
-        {saving ? "กำลังบันทึก..." : "บันทึกแล้ว"}
-      </span>
+      <div className="ml-auto flex items-center gap-3">
+        {presenceSlot}
+        <span className="text-xs text-gray-400">
+          {saving ? "กำลังบันทึก..." : "บันทึกแล้ว"}
+        </span>
+      </div>
     </div>
   );
 }

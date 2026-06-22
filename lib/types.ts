@@ -1,5 +1,6 @@
 // Shared drawing types used by the canvas editor (and later persisted to DB).
 
+/** A point normalized to 0..1 relative to the canvas size (resolution-independent). */
 export type Point = { x: number; y: number };
 
 export type Tool = "pen" | "eraser";
